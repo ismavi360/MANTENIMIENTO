@@ -445,6 +445,8 @@
       const ahora = new Date();
 
       if (tipo === 'ingreso') {
+        if (!confirm("¿Deseas registrar tu ingreso actual?")) return;
+
         const turno = document.getElementById('turnoActual').value;
         const esFeriado = document.getElementById('esFeriadoRapido').checked;
 
@@ -468,6 +470,8 @@
       } else if (tipo === 'salida') {
         const enCurso = obtenerRegistroEnCurso();
         if (enCurso) {
+          if (!confirm("¿Deseas registrar tu salida actual?")) return;
+
           const ingresoDate = new Date(enCurso.ingreso);
           const datosCalculados = calcularHorasJornada(ingresoDate, ahora, enCurso.turno, enCurso.esFeriado);
           
@@ -489,6 +493,9 @@
 
     async function guardarManual(e) {
       e.preventDefault();
+
+      if (!confirm("¿Deseas guardar este registro manual de jornada?")) return;
+
       const turno = document.getElementById('manualTurno').value;
       const ingresoVal = document.getElementById('manualIngreso').value;
       const salidaVal = document.getElementById('manualSalida').value;
@@ -497,9 +504,13 @@
       const ingreso = new Date(ingresoVal);
       const enCursoActual = obtenerRegistroEnCurso();
 
+      // Si hay una jornada en curso, la jornada manual debe ser de un día/hora anterior
       if (enCursoActual) {
-        alert("Ya tienes una jornada en curso abierta. Debes registrar su salida antes de crear otra marcación.");
-        return;
+        const ingresoEnCurso = new Date(enCursoActual.ingreso);
+        if (ingreso >= ingresoEnCurso) {
+          alert("Tienes una jornada en curso abierta. Para registrar una jornada posterior, debes marcar primero la salida de la jornada actual.");
+          return;
+        }
       }
 
       let salida = salidaVal ? new Date(salidaVal) : null;
@@ -509,12 +520,11 @@
         return;
       }
 
-      if (!salida) {
-        const hayDiasPosteriores = registros.some(r => new Date(r.ingreso) > ingreso);
-        if (hayDiasPosteriores) {
-          alert("Debes ingresar obligatoriamente la hora de salida porque ya existen marcaciones registradas en días posteriores.");
-          return;
-        }
+      // Al registrar un día/hora pasado, la hora de salida es obligatoria para evitar dejar múltiples jornadas abiertas
+      const hayDiasPosteriores = registros.some(r => new Date(r.ingreso) > ingreso);
+      if (!salida && (hayDiasPosteriores || enCursoActual)) {
+        alert("Debes ingresar obligatoriamente la fecha y hora de salida para registrar una jornada pasada.");
+        return;
       }
 
       let datosCalculados = { horasSuplementarias: 0, horasExtraordinarias: 0, horasNocturnas: 0 };
@@ -554,7 +564,29 @@
 
       if (esJornadaExtraordinaria) {
         let totalMinutes = Math.floor((salida - ingreso) / (1000 * 60));
-        extMinutes = totalMinutes;
+
+        // Descuento de almuerzo (12:00 a 12:30) y cena (19:00 a 19:30) en jornadas extraordinarias
+        let inicioAlmuerzo = new Date(ingreso);
+        inicioAlmuerzo.setHours(12, 0, 0, 0);
+        let finAlmuerzo = new Date(ingreso);
+        finAlmuerzo.setHours(12, 30, 0, 0);
+
+        let inicioCena = new Date(ingreso);
+        inicioCena.setHours(19, 0, 0, 0);
+        let finCena = new Date(ingreso);
+        finCena.setHours(19, 30, 0, 0);
+
+        let descuentoComida = 0;
+        // Si traslapa completamente con el horario de almuerzo
+        if (ingreso < finAlmuerzo && salida > inicioAlmuerzo) {
+          descuentoComida += 30;
+        }
+        // Si traslapa completamente con el horario de cena
+        if (ingreso < finCena && salida > inicioCena) {
+          descuentoComida += 30;
+        }
+
+        extMinutes = Math.max(0, totalMinutes - descuentoComida);
       } else {
         const shiftInfo = SHIFTS[turnoId];
         let shiftEnd = new Date(ingreso.getTime());
