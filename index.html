@@ -113,15 +113,28 @@
       font-weight: 700; 
       cursor: pointer; 
       font-size: 1.05rem; 
-      transition: background 0.2s, transform 0.1s; 
+      transition: background 0.2s, transform 0.1s, box-shadow 0.2s; 
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
     .btn:active { transform: scale(0.98); }
     .btn-ingreso { background: var(--success); color: white; }
     .btn-salida { background: var(--danger); color: white; }
     .btn-primary { background: var(--accent); color: white; margin-top: 10px; }
+
+    /* Efecto de luz destellante para estado CONFIRMAR */
+    @keyframes glowEffect {
+      0% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.4), 0 0 12px rgba(255, 255, 255, 0.3); }
+      50% { box-shadow: 0 0 18px rgba(255, 255, 255, 0.9), 0 0 28px rgba(255, 255, 255, 0.7); }
+      100% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.4), 0 0 12px rgba(255, 255, 255, 0.3); }
+    }
+
+    .btn-confirming {
+      animation: glowEffect 3s infinite alternate;
+      border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    }
 
     .metrics-grid { display: flex; flex-direction: column; gap: 10px; }
     .metric-card { 
@@ -237,7 +250,7 @@
               </label>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary">Guardar Registro Manual</button>
+          <button type="submit" class="btn btn-primary" id="btnGuardarManual">Guardar Registro Manual</button>
         </form>
       </div>
     </div>
@@ -339,6 +352,43 @@
       e.preventDefault();
     });
 
+    /**
+     * Helper para manejar la lógica del botón de confirmación en dos pasos.
+     */
+    function armarBotonConfirmacion(botonElemento, textoOriginal, alConfirmar) {
+      if (!botonElemento) return;
+      let timeoutId = null;
+
+      const resetearBoton = () => {
+        botonElemento.innerText = textoOriginal;
+        botonElemento.classList.remove('btn-confirming');
+        delete botonElemento.dataset.confirming;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      botonElemento.onclick = (e) => {
+        if (e) e.preventDefault();
+
+        if (botonElemento.dataset.confirming === "true") {
+          resetearBoton();
+          alConfirmar();
+        } else {
+          botonElemento.dataset.confirming = "true";
+          botonElemento.innerText = "CONFIRMAR";
+          botonElemento.classList.add('btn-confirming');
+
+          timeoutId = setTimeout(() => {
+            resetearBoton();
+          }, 3000);
+        }
+      };
+
+      botonElemento._reset = resetearBoton;
+    }
+
     window.addEventListener('DOMContentLoaded', async () => {
       const hoy = new Date();
       document.getElementById('selectMesCobro').value = hoy.toISOString().slice(0, 7);
@@ -346,7 +396,16 @@
       document.getElementById('selectMesCobro').addEventListener('change', renderizarTodo);
       document.getElementById('turnoActual').addEventListener('change', guardarPreferenciaTurno);
       document.getElementById('btnToggleManual').addEventListener('click', toggleManual);
-      document.getElementById('formManual').addEventListener('submit', guardarManual);
+
+      const btnManual = document.getElementById('btnGuardarManual');
+      armarBotonConfirmacion(btnManual, "Guardar Registro Manual", () => {
+        const form = document.getElementById('formManual');
+        if (form.checkValidity()) {
+          guardarManual();
+        } else {
+          form.reportValidity();
+        }
+      });
 
       await cargarPreferenciaTurno();
       escucharRegistrosFirestore();
@@ -423,11 +482,10 @@
         chkFeriado.disabled = true;
 
         contenedor.innerHTML = `
-          <button class="btn btn-salida" id="btnMarcarSalida">
-            ⏱ Marcar Salida
-          </button>
+          <button class="btn btn-salida" id="btnMarcarSalida">⏱ Marcar Salida</button>
         `;
-        document.getElementById('btnMarcarSalida').onclick = () => marcarRápido('salida');
+        const btnSalida = document.getElementById('btnMarcarSalida');
+        armarBotonConfirmacion(btnSalida, "⏱ Marcar Salida", () => marcarRápido('salida'));
       } else {
         turnoSelect.disabled = false;
         chkFeriado.disabled = false;
@@ -437,7 +495,8 @@
         contenedor.innerHTML = `
           <button class="btn btn-ingreso" id="btnMarcarIngreso">⏱️ Marcar Ingreso</button>
         `;
-        document.getElementById('btnMarcarIngreso').onclick = () => marcarRápido('ingreso');
+        const btnIngreso = document.getElementById('btnMarcarIngreso');
+        armarBotonConfirmacion(btnIngreso, "⏱️ Marcar Ingreso", () => marcarRápido('ingreso'));
       }
     }
 
@@ -445,8 +504,6 @@
       const ahora = new Date();
 
       if (tipo === 'ingreso') {
-        if (!confirm("¿Deseas registrar tu ingreso actual?")) return;
-
         const turno = document.getElementById('turnoActual').value;
         const esFeriado = document.getElementById('esFeriadoRapido').checked;
 
@@ -464,14 +521,11 @@
         try {
           await addDoc(collection(db, "marcaciones"), nuevoIngreso);
         } catch (e) {
-          alert("Error al registrar el ingreso en la base de datos.");
-          console.error(e);
+          console.error("Error al registrar el ingreso:", e);
         }
       } else if (tipo === 'salida') {
         const enCurso = obtenerRegistroEnCurso();
         if (enCurso) {
-          if (!confirm("¿Deseas registrar tu salida actual?")) return;
-
           const ingresoDate = new Date(enCurso.ingreso);
           const datosCalculados = calcularHorasJornada(ingresoDate, ahora, enCurso.turno, enCurso.esFeriado);
           
@@ -484,18 +538,13 @@
               horasNocturnas: datosCalculados.horasNocturnas
             });
           } catch (e) {
-            alert("Error al registrar la salida en la base de datos.");
-            console.error(e);
+            console.error("Error al registrar la salida:", e);
           }
         }
       }
     }
 
-    async function guardarManual(e) {
-      e.preventDefault();
-
-      if (!confirm("¿Deseas guardar este registro manual de jornada?")) return;
-
+    async function guardarManual() {
       const turno = document.getElementById('manualTurno').value;
       const ingresoVal = document.getElementById('manualIngreso').value;
       const salidaVal = document.getElementById('manualSalida').value;
@@ -508,7 +557,6 @@
       if (enCursoActual) {
         const ingresoEnCurso = new Date(enCursoActual.ingreso);
         if (ingreso >= ingresoEnCurso) {
-          alert("Tienes una jornada en curso abierta. Para registrar una jornada posterior, debes marcar primero la salida de la jornada actual.");
           return;
         }
       }
@@ -516,14 +564,12 @@
       let salida = salidaVal ? new Date(salidaVal) : null;
 
       if (salida && salida <= ingreso) {
-        alert("La fecha/hora de salida debe ser posterior al ingreso.");
         return;
       }
 
       // Al registrar un día/hora pasado, la hora de salida es obligatoria para evitar dejar múltiples jornadas abiertas
       const hayDiasPosteriores = registros.some(r => new Date(r.ingreso) > ingreso);
       if (!salida && (hayDiasPosteriores || enCursoActual)) {
-        alert("Debes ingresar obligatoriamente la fecha y hora de salida para registrar una jornada pasada.");
         return;
       }
 
@@ -546,8 +592,7 @@
         document.getElementById('formManual').reset();
         toggleManual();
       } catch (e) {
-        alert("Error al guardar la marcación manual.");
-        console.error(e);
+        console.error("Error al guardar la marcación manual:", e);
       }
     }
 
@@ -664,7 +709,7 @@
           const salDate = reg.salida ? new Date(reg.salida) : null;
 
           const ingFormateado = `${ingDate.getDate()}/${ingDate.getMonth()+1} ${ingDate.getHours().toString().padStart(2,'0')}:${ingDate.getMinutes().toString().padStart(2,'0')}`;
-          const salFormateado = salDate ? `${salDate.getHours().toString().padStart(2,'0')}:${salDate.getMinutes().toString().padStart(2,'0')}` : `<span class="badge badge-pending">En Curso</span>`;
+          const salFormateado = salDate ? `${salDate.getDate()}/${salDate.getMonth()+1} ${salDate.getHours().toString().padStart(2,'0')}:${salDate.getMinutes().toString().padStart(2,'0')}` : `<span class="badge badge-pending">En Curso</span>`;
 
           const feriadoBadge = reg.esFeriado ? `<span class="badge badge-feriado">F</span>` : '';
 
@@ -694,13 +739,10 @@
     }
 
     async function eliminarRegistro(idDoc) {
-      if (confirm("¿Eliminar marcación?")) {
-        try {
-          await deleteDoc(doc(db, "marcaciones", idDoc));
-        } catch (e) {
-          alert("Error al eliminar la marcación.");
-          console.error(e);
-        }
+      try {
+        await deleteDoc(doc(db, "marcaciones", idDoc));
+      } catch (e) {
+        console.error("Error al eliminar la marcación:", e);
       }
     }
   </script>
