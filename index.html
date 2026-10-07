@@ -597,72 +597,76 @@
     }
 
     function calcularHorasJornada(ingreso, salida, turnoId, esFeriado) {
-      let supMinutes = 0;
+      // 1. Requisito de duración mínima del turno para habilitar suplementarias
+      const duracionMinimaTurno = (turnoId == 1) ? 7.0 : 8.5; // T1: 7h, T2: 8.5h, T3: 8.5h
+
+      let totalMinutes = Math.floor((salida - ingreso) / (1000 * 60));
+      if (totalMinutes <= 0) {
+        return { horasSuplementarias: 0, horasExtraordinarias: 0, horasNocturnas: 0 };
+      }
+
+      // Descuento de comidas en jornadas que traslapan horarios de almuerzo o cena en festivos/fines de semana
+      let descuentoComida = 0;
+      if (esFeriado || (ingreso.getDay() === 0 || ingreso.getDay() === 6)) {
+        let inicioAlmuerzo = new Date(ingreso); inicioAlmuerzo.setHours(12, 0, 0, 0);
+        let finAlmuerzo = new Date(ingreso); finAlmuerzo.setHours(12, 30, 0, 0);
+        let inicioCena = new Date(ingreso); inicioCena.setHours(19, 0, 0, 0);
+        let finCena = new Date(ingreso); finCena.setHours(19, 30, 0, 0);
+
+        if (ingreso < finAlmuerzo && salida > inicioAlmuerzo) descuentoComida += 30;
+        if (ingreso < finCena && salida > inicioCena) descuentoComida += 30;
+      }
+
+      let totalHorasEfectivas = Math.max(0, totalMinutes - descuentoComida) / 60;
+
       let extMinutes = 0;
       let nocMinutes = 0;
+      let supMinutes = 0;
 
       let cursor = new Date(ingreso.getTime());
-      const end = new Date(salida.getTime());
 
-      let isWeekend = (ingreso.getDay() === 0 || ingreso.getDay() === 6);
-      let esJornadaExtraordinaria = isWeekend || esFeriado;
+      // 2. Recorrido minuto a minuto para separar festivos/fines de semana de días ordinarios
+      while (cursor < salida) {
+        let day = cursor.getDay();
+        let isWeekendOrHoliday = (day === 0 || day === 6 || esFeriado);
 
-      if (esJornadaExtraordinaria) {
-        let totalMinutes = Math.floor((salida - ingreso) / (1000 * 60));
-
-        // Descuento de almuerzo (12:00 a 12:30) y cena (19:00 a 19:30) en jornadas extraordinarias
-        let inicioAlmuerzo = new Date(ingreso);
-        inicioAlmuerzo.setHours(12, 0, 0, 0);
-        let finAlmuerzo = new Date(ingreso);
-        finAlmuerzo.setHours(12, 30, 0, 0);
-
-        let inicioCena = new Date(ingreso);
-        inicioCena.setHours(19, 0, 0, 0);
-        let finCena = new Date(ingreso);
-        finCena.setHours(19, 30, 0, 0);
-
-        let descuentoComida = 0;
-        // Si traslapa completamente con el horario de almuerzo
-        if (ingreso < finAlmuerzo && salida > inicioAlmuerzo) {
-          descuentoComida += 30;
-        }
-        // Si traslapa completamente con el horario de cena
-        if (ingreso < finCena && salida > inicioCena) {
-          descuentoComida += 30;
-        }
-
-        extMinutes = Math.max(0, totalMinutes - descuentoComida);
-      } else {
-        const shiftInfo = SHIFTS[turnoId];
-        let shiftEnd = new Date(ingreso.getTime());
-        const endHour = Math.floor(shiftInfo.end);
-        const endMin = (shiftInfo.end % 1) * 60;
-        shiftEnd.setHours(endHour, endMin, 0, 0);
-        
-        if (turnoId == 3) {
-          shiftEnd.setHours(23, 59, 59, 999);
-        }
-
-        while (cursor < end) {
-          const hour = cursor.getHours();
+        if (isWeekendOrHoliday) {
+          // Minuto en fin de semana / feriado -> Hora Extraordinaria (100%)
+          extMinutes++;
+        } else {
+          // Día laboral ordinario -> Comprobar franja nocturna (19:00 a 06:00)
+          let hour = cursor.getHours();
           if (hour >= 19 || hour < 6) {
             nocMinutes++;
           }
-          cursor.setMinutes(cursor.getMinutes() + 1);
         }
-
-        if (salida > shiftEnd) {
-          let extraMins = Math.floor((salida - shiftEnd) / (1000 * 60));
-          if (extraMins >= 60) {
-            supMinutes = extraMins;
-          }
-        }
+        cursor.setMinutes(cursor.getMinutes() + 1);
       }
 
+      // Restar el tiempo de comida descontado de las horas extraordinarias si aplicó
+      if (extMinutes > 0 && descuentoComida > 0) {
+        extMinutes = Math.max(0, extMinutes - descuentoComida);
+      }
+
+      // 3. Cálculo de Horas Suplementarias (50%)
+      // Solo aplica si cumplió la duración mínima requerida del turno
+      if (totalHorasEfectivas >= duracionMinimaTurno) {
+        let minutosBaseTurno = duracionMinimaTurno * 60;
+        let minutosExcesoTotales = Math.max(0, (totalMinutes - descuentoComida) - minutosBaseTurno);
+
+        // Solo los minutos en exceso que NO fueron catalogados como extraordinarios son suplementarios
+        supMinutes = Math.max(0, minutosExcesoTotales - extMinutes);
+      }
+
+      // 4. Regla del Umbral Mínimo: Solo se consideran si superan los 30 minutos (0.5h)
+      let horasSuplementarias = (supMinutes >= 30) ? (supMinutes / 60) : 0;
+      let horasExtraordinarias = (extMinutes >= 30) ? (extMinutes / 60) : 0;
+      let horasNocturnas = (nocMinutes >= 30) ? (nocMinutes / 60) : 0;
+
       return {
-        horasSuplementarias: (supMinutes / 60),
-        horasExtraordinarias: (extMinutes / 60),
-        horasNocturnas: (nocMinutes / 60)
+        horasSuplementarias,
+        horasExtraordinarias,
+        horasNocturnas
       };
     }
 
