@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <!-- Viewport estrictamente configurado para desactivar zoom y soportar Dynamic Island de iOS -->
+  <!-- Viewport strictly configured to prevent zoom and support iOS Dynamic Island -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Control de Marcaciones - Ismael Villamagua</title>
   <style>
@@ -18,13 +18,13 @@
       --border: #334155;
     }
 
-    /* Prevención global de gestos de zoom y selecciones no deseadas */
+    /* Global prevention of zoom gestures and accidental selections */
     * { 
       box-sizing: border-box; 
       margin: 0; 
       padding: 0; 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      touch-action: manipulation; /* Desactiva zoom por doble tap */
+      touch-action: manipulation; /* Disables double tap zoom */
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -33,12 +33,12 @@
       color: var(--text); 
       padding: calc(12px + env(safe-area-inset-top)) 12px calc(20px + env(safe-area-inset-bottom)) 12px; 
       line-height: 1.4;
-      user-select: none; /* Desactiva seleccion de texto accidental */
+      user-select: none; /* Prevents accidental text selection */
       -webkit-user-select: none;
     }
 
     .container { 
-      max-width: 480px; /* Tamaño optimizado para la pantalla vertical del iPhone 17 Pro Max */
+      max-width: 480px; /* Optimized size for iPhone 17 Pro Max vertical screen */
       margin: 0 auto; 
     }
     
@@ -74,7 +74,7 @@
     
     label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
     
-    /* 16px font-size para evitar que iOS autohaga zoom al tocar el input */
+    /* 16px font-size to prevent iOS auto-zoom on input focus */
     select, input { 
       width: 100%; 
       height: 48px;
@@ -89,18 +89,27 @@
     }
     select:focus, input:focus { outline: 2px solid var(--accent); }
 
+    /* Fix iOS interaction blocking on checkboxes */
     .checkbox-container { 
       display: flex; 
       align-items: center; 
       gap: 10px; 
       padding: 10px 0;
       cursor: pointer; 
+      user-select: auto;
+      -webkit-user-select: auto;
+      pointer-events: auto;
     }
-    .checkbox-container input { 
-      width: 22px; 
-      height: 22px; 
+    .checkbox-container input[type="checkbox"] { 
+      width: 24px; 
+      height: 24px; 
+      min-width: 24px;
+      min-height: 24px;
       cursor: pointer; 
       accent-color: var(--accent);
+      pointer-events: auto;
+      appearance: checkbox;
+      -webkit-appearance: checkbox;
     }
     .checkbox-container span { font-size: 0.95rem; font-weight: 500; }
 
@@ -124,7 +133,7 @@
     .btn-salida { background: var(--danger); color: white; }
     .btn-primary { background: var(--accent); color: white; margin-top: 10px; }
 
-    /* Efecto de luz destellante para estado CONFIRMAR */
+    /* Glowing light effect for CONFIRMAR state */
     @keyframes glowEffect {
       0% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.4), 0 0 12px rgba(255, 255, 255, 0.3); }
       50% { box-shadow: 0 0 18px rgba(255, 255, 255, 0.9), 0 0 28px rgba(255, 255, 255, 0.7); }
@@ -347,13 +356,13 @@
       3: { name: '3er Turno', start: 15.5, end: 24 }
     };
 
-    // Bloqueo estricto de gestos de zoom en iOS mediante JavaScript
+    // Strict zoom blocking in iOS via JS
     document.addEventListener('gesturestart', function (e) {
       e.preventDefault();
     });
 
     /**
-     * Helper para manejar la lógica del botón de confirmación en dos pasos.
+     * Helper to handle 2-step confirmation button logic
      */
     function armarBotonConfirmacion(botonElemento, textoOriginal, alConfirmar) {
       if (!botonElemento) return;
@@ -553,7 +562,7 @@
       const ingreso = new Date(ingresoVal);
       const enCursoActual = obtenerRegistroEnCurso();
 
-      // Si hay una jornada en curso, la jornada manual debe ser de un día/hora anterior
+      // If shift in progress, manual shift must be earlier
       if (enCursoActual) {
         const ingresoEnCurso = new Date(enCursoActual.ingreso);
         if (ingreso >= ingresoEnCurso) {
@@ -567,7 +576,7 @@
         return;
       }
 
-      // Al registrar un día/hora pasado, la hora de salida es obligatoria para evitar dejar múltiples jornadas abiertas
+      // Exit time required for past manual entries
       const hayDiasPosteriores = registros.some(r => new Date(r.ingreso) > ingreso);
       if (!salida && (hayDiasPosteriores || enCursoActual)) {
         return;
@@ -597,7 +606,7 @@
     }
 
     function calcularHorasJornada(ingreso, salida, turnoId, esFeriado) {
-      // 1. Requisito de duración mínima del turno para habilitar suplementarias
+      // 1. Minimum shift duration requirement for overtime
       const duracionMinimaTurno = (turnoId == 1) ? 7.0 : 8.5; // T1: 7h, T2: 8.5h, T3: 8.5h
 
       let totalMinutes = Math.floor((salida - ingreso) / (1000 * 60));
@@ -605,7 +614,7 @@
         return { horasSuplementarias: 0, horasExtraordinarias: 0, horasNocturnas: 0 };
       }
 
-      // Descuento de comidas en jornadas que traslapan horarios de almuerzo o cena en festivos/fines de semana
+      // Meal deduction for shifts overlapping lunch/dinner on holidays or weekends
       let descuentoComida = 0;
       if (esFeriado || (ingreso.getDay() === 0 || ingreso.getDay() === 6)) {
         let inicioAlmuerzo = new Date(ingreso); inicioAlmuerzo.setHours(12, 0, 0, 0);
@@ -625,16 +634,16 @@
 
       let cursor = new Date(ingreso.getTime());
 
-      // 2. Recorrido minuto a minuto para separar festivos/fines de semana de días ordinarios
+      // 2. Minute-by-minute evaluation
       while (cursor < salida) {
         let day = cursor.getDay();
         let isWeekendOrHoliday = (day === 0 || day === 6 || esFeriado);
 
         if (isWeekendOrHoliday) {
-          // Minuto en fin de semana / feriado -> Hora Extraordinaria (100%)
+          // Weekend/Holiday -> Extraordinary Hours (100%)
           extMinutes++;
         } else {
-          // Día laboral ordinario -> Comprobar franja nocturna (19:00 a 06:00)
+          // Regular workday -> Check night shift range (19:00 to 06:00)
           let hour = cursor.getHours();
           if (hour >= 19 || hour < 6) {
             nocMinutes++;
@@ -643,22 +652,21 @@
         cursor.setMinutes(cursor.getMinutes() + 1);
       }
 
-      // Restar el tiempo de comida descontado de las horas extraordinarias si aplicó
+      // Subtract meal deduction from extraordinary minutes if applied
       if (extMinutes > 0 && descuentoComida > 0) {
         extMinutes = Math.max(0, extMinutes - descuentoComida);
       }
 
-      // 3. Cálculo de Horas Suplementarias (50%)
-      // Solo aplica si cumplió la duración mínima requerida del turno
+      // 3. Supplementary Hours Calculation (50%)
       if (totalHorasEfectivas >= duracionMinimaTurno) {
         let minutosBaseTurno = duracionMinimaTurno * 60;
         let minutosExcesoTotales = Math.max(0, (totalMinutes - descuentoComida) - minutosBaseTurno);
 
-        // Solo los minutos en exceso que NO fueron catalogados como extraordinarios son suplementarios
+        // Only excess minutes not counted as extraordinary are supplementary
         supMinutes = Math.max(0, minutosExcesoTotales - extMinutes);
       }
 
-      // 4. Regla del Umbral Mínimo: Solo se consideran si superan los 30 minutos (0.5h)
+      // 4. Minimum Threshold Rule: Only count if > 30 mins (0.5h)
       let horasSuplementarias = (supMinutes >= 30) ? (supMinutes / 60) : 0;
       let horasExtraordinarias = (extMinutes >= 30) ? (extMinutes / 60) : 0;
       let horasNocturnas = (nocMinutes >= 30) ? (nocMinutes / 60) : 0;
